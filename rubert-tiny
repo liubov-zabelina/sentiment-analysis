@@ -67,8 +67,8 @@ model = AutoModelForSequenceClassification.from_pretrained(model_name, num_label
 # 5. Настройки обучения
 training_args = TrainingArguments(
     output_dir="./results",
-    eval_strategy="epoch",            # ✅ правильный параметр
-    save_strategy="epoch",            # ✅ всё ещё поддерживается
+    eval_strategy="epoch",
+    save_strategy="epoch",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
     num_train_epochs=3,

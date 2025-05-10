@@ -25,15 +25,15 @@ df["sentiment"] = df["sentiment"].map(label_mapping)
 counts = df["sentiment"].value_counts()
 max_count = counts.max()
 df_balanced = pd.concat([
-    df[df["sentiment"] == label].sample(max_count, replace=True, random_state=42)
+    df[df["sentiment"] == label].sample(max_count, replace=True, random_state=115)
     for label in counts.index
-]).sample(frac=1, random_state=42).reset_index(drop=True)
+]).sample(frac=1, random_state=115).reset_index(drop=True)
 
 #2. Токенизация и датасеты
 model_name = "sberbank-ai/ruRoberta-large"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-train_df, eval_df = train_test_split(df_balanced, test_size=0.2, stratify=df_balanced["sentiment"], random_state=42)
+train_df, eval_df = train_test_split(df_balanced, test_size=0.2, stratify=df_balanced["sentiment"], random_state=115)
 train_ds = Dataset.from_pandas(train_df.rename(columns={"comment": "text", "sentiment": "label"}))
 eval_ds = Dataset.from_pandas(eval_df.rename(columns={"comment": "text", "sentiment": "label"}))
 

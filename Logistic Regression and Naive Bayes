@@ -1,0 +1,60 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# 1. Загрузка данных
+df = pd.read_excel("Obschiy_dataset.xlsx").dropna()
+df.columns = ["comment", "sentiment"]
+df["sentiment"] = df["sentiment"].astype(int)
+
+# 2. Разделение
+X_train, X_test, y_train, y_test = train_test_split(
+    df["comment"], df["sentiment"],
+    test_size=0.2, stratify=df["sentiment"], random_state=42
+)
+
+# 3. TF-IDF векторизация
+vectorizer = TfidfVectorizer(ngram_range=(1, 2), max_features=10000)
+X_train_tfidf = vectorizer.fit_transform(X_train)
+X_test_tfidf = vectorizer.transform(X_test)
+
+#Модель 1: Logistic Regression
+lr_model = LogisticRegression(max_iter=1000, class_weight='balanced')
+lr_model.fit(X_train_tfidf, y_train)
+lr_preds = lr_model.predict(X_test_tfidf)
+
+print("\n Logistic Regression:")
+print(classification_report(y_test, lr_preds, digits=3))
+print(f"Accuracy: {accuracy_score(y_test, lr_preds):.4f} | Macro F1: {f1_score(y_test, lr_preds, average='macro'):.4f}")
+
+cm_lr = confusion_matrix(y_test, lr_preds, labels=[-1, 0, 1])
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm_lr, annot=True, fmt="d", cmap="Blues", xticklabels=[-1, 0, 1], yticklabels=[-1, 0, 1])
+plt.title("Confusion Matrix: Logistic Regression")
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.tight_layout()
+plt.show()
+
+#Модель 2: Multinomial Naive Bayes
+nb_model = MultinomialNB()
+nb_model.fit(X_train_tfidf, y_train)
+nb_preds = nb_model.predict(X_test_tfidf)
+
+print("\n Multinomial Naive Bayes:")
+print(classification_report(y_test, nb_preds, digits=3))
+print(f"Accuracy: {accuracy_score(y_test, nb_preds):.4f} | Macro F1: {f1_score(y_test, nb_preds, average='macro'):.4f}")
+
+cm_nb = confusion_matrix(y_test, nb_preds, labels=[-1, 0, 1])
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm_nb, annot=True, fmt="d", cmap="Greens", xticklabels=[-1, 0, 1], yticklabels=[-1, 0, 1])
+plt.title("Confusion Matrix: Naive Bayes")
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.tight_layout()
+plt.show()

@@ -16,7 +16,7 @@ df = pd.read_excel("Obschiy_dataset.xlsx").dropna()
 df["label"] = df["label"].map({-1: 0, 0: 1, 1: 2})  # 0=негатив, 1=нейтрал, 2=позитив
 
 # 2. Оверсэмплинг тренировочных данных
-train_df, val_df = train_test_split(df, test_size=0.1, random_state=42, stratify=df["label"])
+train_df, val_df = train_test_split(df, test_size=0.1, random_state=115, stratify=df["label"])
 
 # Кол-во примеров в каждом классе
 class_counts = train_df["label"].value_counts()
@@ -24,12 +24,12 @@ max_count = class_counts.max()
 
 # Балансировка
 balanced_train_df = pd.concat([
-    train_df[train_df["label"] == label].sample(max_count, replace=True, random_state=42)
+    train_df[train_df["label"] == label].sample(max_count, replace=True, random_state=115)
     for label in class_counts.index
 ])
 
 # Перемешивание
-balanced_train_df = balanced_train_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+balanced_train_df = balanced_train_df.sample(frac=1.0, random_state=115).reset_index(drop=True)
 
 # 3. Подготовка токенизатора
 model_name = "cointegrated/rubert-tiny2"

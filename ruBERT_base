@@ -1,0 +1,110 @@
+import pandas as pd
+import numpy as np
+import torch
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, DataCollatorWithPadding
+from datasets import Dataset
+from collections import Counter
+
+#1. Загрузка и подготовка датасета
+df = pd.read_excel("Obschiy_dataset.xlsx")
+df.columns = ["comment", "sentiment"]
+df = df.dropna()
+df["sentiment"] = df["sentiment"].astype(int)
+
+#Перекодировка: -1 → 0, 0 → 1, 1 → 2 ===
+label_mapping = {-1: 0, 0: 1, 1: 2}
+inv_label_mapping = {0: -1, 1: 0, 2: 1}
+df["sentiment"] = df["sentiment"].map(label_mapping)
+
+#Оверсэмплинг для класса -1 (label=0)
+min_class = df[df["sentiment"] == 0]
+needed = max(df["sentiment"].value_counts()) - len(min_class)
+oversampled = min_class.sample(needed, replace=True, random_state=42)
+df = pd.concat([df, oversampled]).sample(frac=1, random_state=42).reset_index(drop=True)
+
+#2. Токенизация и создание датасетов
+model_name = "sberbank-ai/ruBert-base"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+train_df, eval_df = train_test_split(df, test_size=0.2, stratify=df["sentiment"], random_state=42)
+train_ds = Dataset.from_pandas(train_df.rename(columns={"comment": "text", "sentiment": "label"}))
+eval_ds = Dataset.from_pandas(eval_df.rename(columns={"comment": "text", "sentiment": "label"}))
+
+def tokenize_fn(example):
+    return tokenizer(example["text"], padding="max_length", truncation=True, max_length=128)
+
+train_tokenized = train_ds.map(tokenize_fn, batched=True)
+eval_tokenized = eval_ds.map(tokenize_fn, batched=True)
+
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=3)
+
+#3. Аргументы обучения
+training_args = TrainingArguments(
+    output_dir="../../Lube_images/results",
+    evaluation_strategy="epoch",
+    save_strategy="epoch",
+    per_device_train_batch_size=16,
+    per_device_eval_batch_size=16,
+    num_train_epochs=10,
+    learning_rate=2e-5,
+    weight_decay=0.01,
+    load_best_model_at_end=True,
+    metric_for_best_model="eval_f1",
+    save_total_limit=1,
+    greater_is_better=True,
+    report_to="none"
+)
+
+def compute_metrics(pred):
+    labels = pred.label_ids
+    preds = np.argmax(pred.predictions, axis=1)
+    return {
+        "accuracy": accuracy_score(labels, preds),
+        "f1": f1_score(labels, preds, average="macro")
+    }
+
+#4. Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_tokenized,
+    eval_dataset=eval_tokenized,
+    tokenizer=tokenizer,
+    data_collator=data_collator,
+    compute_metrics=compute_metrics
+)
+
+print("\n Fine-tuning ruBert-base с оверсэмплингом...")
+trainer.train()
+
+#5. Оценка
+preds = trainer.predict(eval_tokenized)
+y_pred = np.argmax(preds.predictions, axis=1)
+y_true = np.array(eval_ds["label"])
+
+# Декодировка
+y_pred_decoded = np.vectorize(inv_label_mapping.get)(y_pred)
+y_true_decoded = np.vectorize(inv_label_mapping.get)(y_true)
+
+acc = accuracy_score(y_true_decoded, y_pred_decoded)
+f1 = f1_score(y_true_decoded, y_pred_decoded, average="macro")
+cm = confusion_matrix(y_true_decoded, y_pred_decoded, labels=[-1, 0, 1])
+
+print("\n Classification report (ruBERT-base, 3-class + oversampling):")
+print(classification_report(y_true_decoded, y_pred_decoded, digits=3))
+
+plt.figure(figsize=(6, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=[-1, 0, 1], yticklabels=[-1, 0, 1])
+plt.title("Confusion Matrix: ruBERT-base (3-class)")
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.tight_layout()
+plt.show()
+
+print(f"\n Accuracy: {acc:.4f}\n Macro F1-score: {f1:.4f}")

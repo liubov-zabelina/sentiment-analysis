@@ -96,7 +96,7 @@ with torch.no_grad():
         all_preds.extend(preds)
         all_labels.extend(y_batch.numpy())
 
-print("\n📋 Classification Report (GRU без torchtext):")
+print("\n Classification Report (GRU без torchtext):")
 print(classification_report(all_labels, all_preds, digits=3, target_names=["негатив", "нейтрал", "позитив"]))
 
 cm = confusion_matrix(all_labels, all_preds)

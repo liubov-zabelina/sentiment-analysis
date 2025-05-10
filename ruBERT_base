@@ -24,14 +24,14 @@ df["sentiment"] = df["sentiment"].map(label_mapping)
 #Оверсэмплинг для класса -1 (label=0)
 min_class = df[df["sentiment"] == 0]
 needed = max(df["sentiment"].value_counts()) - len(min_class)
-oversampled = min_class.sample(needed, replace=True, random_state=42)
-df = pd.concat([df, oversampled]).sample(frac=1, random_state=42).reset_index(drop=True)
+oversampled = min_class.sample(needed, replace=True, random_state=115)
+df = pd.concat([df, oversampled]).sample(frac=1, random_state=115).reset_index(drop=True)
 
 #2. Токенизация и создание датасетов
 model_name = "sberbank-ai/ruBert-base"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-train_df, eval_df = train_test_split(df, test_size=0.2, stratify=df["sentiment"], random_state=42)
+train_df, eval_df = train_test_split(df, test_size=0.2, stratify=df["sentiment"], random_state=115)
 train_ds = Dataset.from_pandas(train_df.rename(columns={"comment": "text", "sentiment": "label"}))
 eval_ds = Dataset.from_pandas(eval_df.rename(columns={"comment": "text", "sentiment": "label"}))
 

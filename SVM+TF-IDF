@@ -32,13 +32,13 @@ df["sentiment"] = df["sentiment"].map({-1: 0, 0: 1, 1: 2})  # 0=негатив, 
 # Балансировка
 max_count = df["sentiment"].value_counts().max()
 df = pd.concat([
-    df[df["sentiment"] == label].sample(max_count, replace=True, random_state=42)
+    df[df["sentiment"] == label].sample(max_count, replace=True, random_state=115)
     for label in df["sentiment"].unique()
-]).sample(frac=1, random_state=42).reset_index(drop=True)
+]).sample(frac=1, random_state=115).reset_index(drop=True)
 
 #2. Разделение и векторизация
 X_train, X_test, y_train, y_test = train_test_split(
-    df["comment"], df["sentiment"], test_size=0.2, stratify=df["sentiment"], random_state=42
+    df["comment"], df["sentiment"], test_size=0.2, stratify=df["sentiment"], random_state=115
 )
 
 vectorizer = TfidfVectorizer(

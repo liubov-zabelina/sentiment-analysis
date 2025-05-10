@@ -1,0 +1,111 @@
+import pandas as pd
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import classification_report, confusion_matrix
+from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+#1. Загрузка и подготовка данных
+df = pd.read_excel("Obschiy_dataset.xlsx").dropna()
+df.columns = ["comment", "sentiment"]
+df["sentiment"] = df["sentiment"].map({-1: 0, 0: 1, 1: 2})
+
+# Оверсэмплинг
+max_count = df["sentiment"].value_counts().max()
+df = pd.concat([
+    df[df["sentiment"] == label].sample(max_count, replace=True, random_state=42)
+    for label in df["sentiment"].unique()
+]).sample(frac=1).reset_index(drop=True)
+
+train_texts, val_texts, train_labels, val_labels = train_test_split(
+    df["comment"], df["sentiment"], test_size=0.2, stratify=df["sentiment"], random_state=42
+)
+
+#2. Токенизация через CountVectorizer (с индексацией токенов)
+vectorizer = CountVectorizer(max_features=10000, tokenizer=lambda x: x.split())
+vectorizer.fit(train_texts)
+
+def encode_text(text, max_len=50):
+    tokens = vectorizer.build_tokenizer()(text)
+    ids = [vectorizer.vocabulary_.get(token, 0) for token in tokens]
+    return ids[:max_len] + [0] * (max_len - len(ids))
+
+class CommentDataset(Dataset):
+    def __init__(self, texts, labels):
+        self.data = [encode_text(t) for t in texts]
+        self.labels = labels.tolist()
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return torch.tensor(self.data[idx]), torch.tensor(self.labels[idx])
+
+train_dataset = CommentDataset(train_texts, train_labels)
+val_dataset = CommentDataset(val_texts, val_labels)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=32)
+
+# 3. Модель GRU
+class GRUClassifier(nn.Module):
+    def __init__(self, vocab_size, embed_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
+        self.gru = nn.GRU(embed_dim, hidden_dim, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x):
+        emb = self.embedding(x)
+        _, h = self.gru(emb)
+        return self.fc(h.squeeze(0))
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = GRUClassifier(vocab_size=len(vectorizer.vocabulary_), embed_dim=128, hidden_dim=128, output_dim=3).to(device)
+
+#4. Обучение
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+for epoch in range(10):
+    model.train()
+    total_loss = 0
+    for x_batch, y_batch in train_loader:
+        x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+        optimizer.zero_grad()
+        logits = model(x_batch)
+        loss = criterion(logits, y_batch)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    print(f"Epoch {epoch+1} | Loss: {total_loss:.4f}")
+
+#5. Оценка
+model.eval()
+all_preds, all_labels = [], []
+
+with torch.no_grad():
+    for x_batch, y_batch in val_loader:
+        x_batch = x_batch.to(device)
+        logits = model(x_batch)
+        preds = torch.argmax(logits, dim=1).cpu().numpy()
+        all_preds.extend(preds)
+        all_labels.extend(y_batch.numpy())
+
+print("\n📋 Classification Report (GRU без torchtext):")
+print(classification_report(all_labels, all_preds, digits=3, target_names=["негатив", "нейтрал", "позитив"]))
+
+cm = confusion_matrix(all_labels, all_preds)
+plt.figure(figsize=(6, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["негатив", "нейтрал", "позитив"],
+            yticklabels=["негатив", "нейтрал", "позитив"])
+plt.title("Матрица ошибок GRU")
+plt.xlabel("Предсказано")
+plt.ylabel("Истинное")
+plt.tight_layout()
+plt.show()

@@ -1,0 +1,113 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tqdm.auto import tqdm
+
+import torch
+from torch.utils.data import Dataset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
+from collections import Counter
+import numpy as np
+
+# 1. Загрузка и подготовка данных
+df = pd.read_excel("Obschiy_dataset.xlsx").dropna()
+df["label"] = df["label"].map({-1: 0, 0: 1, 1: 2})  # 0=негатив, 1=нейтрал, 2=позитив
+
+# 2. Оверсэмплинг тренировочных данных
+train_df, val_df = train_test_split(df, test_size=0.1, random_state=42, stratify=df["label"])
+
+# Кол-во примеров в каждом классе
+class_counts = train_df["label"].value_counts()
+max_count = class_counts.max()
+
+# Балансировка
+balanced_train_df = pd.concat([
+    train_df[train_df["label"] == label].sample(max_count, replace=True, random_state=42)
+    for label in class_counts.index
+])
+
+# Перемешивание
+balanced_train_df = balanced_train_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+
+# 3. Подготовка токенизатора
+model_name = "cointegrated/rubert-tiny2"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+class CommentDataset(Dataset):
+    def __init__(self, texts, labels, tokenizer, max_len=128):
+        self.encodings = tokenizer(texts, truncation=True, padding=True, max_length=max_len)
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        return {
+            "input_ids": torch.tensor(self.encodings["input_ids"][idx]),
+            "attention_mask": torch.tensor(self.encodings["attention_mask"][idx]),
+            "labels": torch.tensor(self.labels[idx]),
+        }
+
+    def __len__(self):
+        return len(self.labels)
+
+train_dataset = CommentDataset(
+    balanced_train_df["comment"].tolist(),
+    balanced_train_df["label"].tolist(),
+    tokenizer
+)
+val_dataset = CommentDataset(
+    val_df["comment"].tolist(),
+    val_df["label"].tolist(),
+    tokenizer
+)
+
+# 4. Модель
+model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=3)
+
+# 5. Настройки обучения
+training_args = TrainingArguments(
+    output_dir="./results",
+    eval_strategy="epoch",            # ✅ правильный параметр
+    save_strategy="epoch",            # ✅ всё ещё поддерживается
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.01,
+    logging_dir="./logs",
+    load_best_model_at_end=True,
+    metric_for_best_model="eval_loss",
+    logging_steps=10,
+    report_to="none"
+)
+
+
+# 6. Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    tokenizer=tokenizer,
+)
+
+# 7. Обучение
+trainer.train()
+
+# 8. Оценка
+preds = trainer.predict(val_dataset)
+y_pred = preds.predictions.argmax(-1)
+y_true = val_df["label"].tolist()
+
+print(classification_report(y_true, y_pred, target_names=["негатив", "нейтрал", "позитив"]))
+
+# 9. Матрица ошибок
+cm = confusion_matrix(y_true, y_pred)
+plt.figure(figsize=(6, 5))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["негатив", "нейтрал", "позитив"],
+            yticklabels=["негатив", "нейтрал", "позитив"])
+plt.xlabel("Предсказано")
+plt.ylabel("Истинное")
+plt.title("Матрица ошибок")
+plt.tight_layout()
+plt.show()
